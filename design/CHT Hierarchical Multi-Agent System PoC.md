@@ -52,7 +52,7 @@ Master Supervisor (Orchestrator)
     • Approve for completion
 ```
 
-## CHT-Agent vs LLM
+## CHT-Agent vs Typical Uses of LLM's
 
 ![comparison](./cht-agent%20comparison%20llm.png)
 ![advantages](./cht-agent%20system%20advantages.png)
