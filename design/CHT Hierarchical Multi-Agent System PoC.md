@@ -2,7 +2,7 @@
 
 ## Notes
 We created this design based off:
-- our manual multi-agent setup that created [Historical Targets Context](https://github.com/Hareet/cht-core/blob/301ee2aadbe31a13faa5e0c086b0d25fcaf65022/webapp/src/ts/modules/analytics/CHW-Historical-Targets-Context.md) and [PR](https://github.com/Hareet/cht-core/pull/1)
+- our manual multi-agent setup that created [Historical Targets Context](https://github.com/Hareet/cht-core/blob/301ee2aadbe31a13faa5e0c086b0d25fcaf65022/webapp/src/ts/modules/analytics/CHW-Historical-Targets-Context.md) and [draft/example PR](https://github.com/Hareet/cht-core/pull/1)
 - learnings from [Agentic Design Patterns](https://docs.google.com/document/d/1rsaK53T3Lg5KoGwvf8ukOUvbELRtH-V0LnOIFDxBryE/preview?pli=1&tab=t.0)
 - This plan was generated and revised across days with Claude and edited/verified by me. 
 
@@ -15,6 +15,7 @@ Current Phase (POC/Demo)
 - Input: Structured issue templates mimicking GitHub issues
 - Processing: Multi-agent system with human validation checkpoints
 - Output: Validated code solutions with test coverage
+- Memory: Simplified RAG with context-based files in a cht-core similar directory structure
 
 Future Vision
 
@@ -57,12 +58,53 @@ Master Supervisor (Orchestrator)
 ![comparison](./cht-agent%20comparison%20llm.png)
 ![advantages](./cht-agent%20system%20advantages.png)
 
+## Philosphical Questions around Stewardship Team and AI
+
+- Why the Stewardship Team?
+  We are best situated to:
+     - Productionize the Agent System (code design, interfaces, db)
+     - Validate the context, goal-setting, and error handling
+     - Standardize the use of Agents in the CHT and their maintenance (and all of their dependencies, contexts, specialization)
+     - Further abstract our agent system to provide interfaces for non-technical community
+     - Provide community members the npm package to run the agent system locally with their model of choosing
+     - Provide a hosted service of the agent system (plus any peripheral tools/interfaces)
+  
+- What is the audience?
+  - The end-game internal audience of this is our non-technical community leads: Antony, Loukman, Nitin, etc.
+        - We describe the constraints of the agent system, and template guidance / definitions
+        - They go from design doc to agent template and create viable plan to share with partner or internal dev
+  - Our entry point to shovel in context and productionize the agent system before end-game is ourselves, medic-afya, and trusted community members.
+  - Our mid-point impact check will be medic-afya or community members using it to add context or engage with specialized agents for plans
+  - The result will be non-technical community members flourishing
+
+- What does this cost?
+  - It's up to you
+  - Depending on what model you use and how you are using it.
+  - We can rate-limit accordingly
+      - No one should be using this for immediacy, so "Oh, you've reached your Claude Pro or whatever LLM Max Cost setting, we will try in 1-2 hours" error-handling
+  - When using it in Dev environment as an individual, you can use Claude Code and non-interactive mode
+  - When using it in CI/CD, they want to push you to a license and API key (per-use charged)
+  - Before we reach any hosted agent-system service or end-game audience scenario with interfaces for non-technical people, we can chart out costs per model and research which model is most accurate for cheap with our validated context
+  - For our development time, we need a few of us with Claude Max, and some with Claude Pro.
+
+- Where do we start?
+  - Path #1: If people still need convincing -> Hareet creates a demo by himself and manually pushes it to resolve a few easy GH issue to demonstrate. 
+      - Anthropic is using Claude to write most (70%) of Claude Code. [Interview](https://www.youtube.com/watch?v=zDmW5hJPsvQ)
+         - If we take 10% of that statement as true, it's an outsized impact to us.
+  - Path #2: Path 1 but with additional support feedback from interested people
+  - Path #3: Team collaboration and divide & conquer and aim for a proper agent system. I already have ideas on how we could finish this as a team based on subjects people enjoy.
+
+- Models move fast, Anthropic announced [Claude Sonnet 4.5 on 9/29](https://www.anthropic.com/news/claude-sonnet-4-5)
+  - Our agent system will incorporate any model, and be better fit than any general straight-to-LLM query, or user-created single-agent context and configuration.
+  - By the time we have validated context and productionized an agent-system, models 5+ or 6+ could be on the horizon.
+
 ## Core Design Principles
 
-1. **Tool Orchestration Over Reinvention**: Agents act as intelligent coordinators of existing CHT tools (cht-conf, cht-toolbox, cht-datasource, cht-docs, npm scripts) rather than implementing custom validation
-2. **Context-Based Learning**: Lightweight file-based memory system that mirrors CHT repository structure
-3. **Incremental Value Delivery**: Each agent provides immediate value while building knowledge over time
-4. **Developer-Friendly Integration**: Seamless integration with existing npm scripts and development workflows
+1. **Run locally with any model**: Use your own model, plan your own costs, to query any specialized agent or plan a multi-agent solution to an issue.
+2. **Tool Orchestration Over Reinvention**: Agents act as intelligent coordinators of existing CHT tools (cht-conf, cht-toolbox, cht-datasource, cht-docs, npm scripts) rather than implementing custom validation
+3. **Context-Based Learning**: Lightweight file-based memory system that mirrors CHT repository structure
+4. **Incremental Value Delivery**: Each agent provides immediate value while building knowledge over time
+5. **Developer-Friendly Integration**: Seamless integration with existing npm scripts and development workflows
 
 ## Agent Specifications
 
