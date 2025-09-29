@@ -10,20 +10,52 @@ We created this design based off:
 
 This document outlines a pragmatic proof-of-concept for a hierarchical multi-agent system designed to assist with CHT development workflows. The system leverages existing CHT testing infrastructure, employs context-based learning, and focuses on practical value delivery rather than theoretical completeness.
 
+Current Phase (POC/Demo)
+- Interface: Command-line tool accepting templated issues via prompt
+- Input: Structured issue templates mimicking GitHub issues
+- Processing: Multi-agent system with human validation checkpoints
+- Output: Validated code solutions with test coverage
+
+Future Vision
+
+- Integration with actual GitHub issues
+- Automated triggering via keywords and CHT agent tags
+- __Non-technical partner support through structured templates__
+- Full CI/CD pipeline integration
+- Once all context is validated, move to RAG / Vector DB
+
 ## System Architecture Overview
 
 ```
+CLI Interface
+    ↓
 Master Supervisor (Orchestrator)
 ├── Research Supervisor
 │   ├── Documentation Search Agent
 │   └── Context Analysis Agent
+│   
+├── [HUMAN VALIDATION CHECKPOINT #1]
+│   • Validate research findings
+│   • Approve orchestration plan
+│   
 ├── Development Supervisor
 │   ├── Code Generation Agent
 │   └── Test Environment Agent
-└── QA Supervisor
-    ├── Code Validation Agent 
-    └── Test Orchestration Agent
+│   
+├── QA Supervisor
+│   ├── Code Validation Agent
+│   └── Test Orchestration Agent
+│   
+└── [HUMAN VALIDATION CHECKPOINT #2]
+    • Review generated code
+    • Verify test results
+    • Approve for completion
 ```
+
+## CHT-Agent vs LLM
+
+![comparison](./cht-agent%20comparison%20llm.png)
+![advantages](./cht-agent%20system%20advantages.png)
 
 ## Core Design Principles
 
@@ -434,6 +466,354 @@ interface AgentMessage {
   };
 }
 ```
+
+## CLI Tool Specification
+### Command Structure
+
+```bash
+
+cht-agent process --template <template-file> [--mode interactive|auto]
+
+# Template validation
+cht-agent validate-template --file <template-file>
+
+# Status check
+cht-agent status --task-id <id>
+
+# Resume after human validation
+cht-agent resume --task-id <id> --approve|--reject [--feedback "..."]
+```
+
+### Issue Template Format
+
+```yaml 
+# cht-issue-template.yaml
+
+issue:
+  title: "Implement new pregnancy visit form"
+  type: feature|bug|enhancement
+  priority: high|medium|low
+  
+  description: |
+    Detailed description of the requirement
+    
+  technical_context:
+    category: forms|tasks|reports|targets
+    components: [webapp, api, sentinel]
+    existing_forms: [anc_visit, pregnancy_registration]
+    
+  requirements:
+    - Clear requirement 1
+    - Clear requirement 2
+    
+  acceptance_criteria:
+    - Test scenario 1
+    - Test scenario 2
+    
+  constraints:
+    - Must work offline
+    - Compatible with CHT 4.x
+    
+  reference_data:
+    similar_implementations: [link1, link2]
+    documentation: [doc1, doc2]
+```
+
+### CLI Workflow
+
+```typescript
+typescriptexport class CHTAgentCLI {
+  private orchestrator: MasterOrchestrator;
+  private taskManager: TaskManager;
+  private contextManager: ResearchContextManager;
+  
+  async processTemplate(templatePath: string, mode: 'interactive' | 'auto'): Promise<void> {
+    // 1. Parse and validate template
+    const template = await this.parseTemplate(templatePath);
+    const validation = await this.validateTemplate(template);
+    
+    if (!validation.isValid) {
+      this.displayValidationErrors(validation.errors);
+      return;
+    }
+    
+    // 2. Initialize task and context
+    const taskId = await this.taskManager.createTask(template);
+    const context = await this.contextManager.initializeContext(taskId, template);
+    console.log(`✓ Task created: ${taskId}`);
+    console.log(`📁 Context initialized: v${context.version}`);
+    
+    // 3. Check for similar past contexts
+    const similarContexts = await this.contextManager.findSimilarContexts(template);
+    if (similarContexts.length > 0) {
+      console.log(`\n🔍 Found ${similarContexts.length} similar past implementations`);
+      this.displaySimilarContexts(similarContexts);
+    }
+    
+    // 4. Start research phase
+    console.log('\n📚 Starting Research Phase...');
+    const research = await this.orchestrator.runResearchPhase(template, context);
+    
+    // Save research results to context
+    await this.contextManager.updateContext(taskId, {
+      phase: 'research',
+      agent: 'research-supervisor',
+      type: 'research_complete',
+      content: research
+    });
+    
+    // 5. HUMAN CHECKPOINT #1
+    console.log('\n🔍 Research Complete - Human Validation Required');
+    const currentContext = await this.contextManager.loadResearchContext(taskId);
+    this.displayResearchSummary(research);
+    this.displayOrchestrationPlan(currentContext.orchestrationPlan);
+    console.log(`\n💾 Research Context Saved: task-${taskId}-v${currentContext.version}.json`);
+    
+    if (mode === 'interactive') {
+      const approval = await this.promptForApproval('research');
+      
+      // Save human feedback to context
+      await this.contextManager.updateContext(taskId, {
+        phase: 'research',
+        agent: 'human',
+        type: 'human_feedback',
+        content: approval
+      });
+      
+      if (!approval.approved) {
+        await this.handleRejection(taskId, 'research', approval.feedback);
+        return;
+      }
+    } else {
+      console.log('⏸️  Waiting for validation. Resume with: cht-agent resume --task-id ' + taskId);
+      await this.saveCheckpoint(taskId, 'research', research);
+      return;
+    }
+    
+    // 6. Development and Testing Phase (with context awareness)
+    console.log('\n💻 Starting Development Phase...');
+    const latestContext = await this.contextManager.loadResearchContext(taskId);
+    const implementation = await this.orchestrator.runDevelopmentPhase(
+      latestContext.orchestrationPlan,
+      latestContext
+    );
+    
+    // Update context with implementation
+    await this.contextManager.updateContext(taskId, {
+      phase: 'implementation',
+      agent: 'development-supervisor',
+      type: 'implementation_complete',
+      content: implementation
+    });
+    
+    // 7. HUMAN CHECKPOINT #2
+    console.log('\n✅ Implementation Complete - Final Validation Required');
+    const finalContext = await this.contextManager.loadResearchContext(taskId);
+    this.displayImplementationSummary(implementation);
+    this.displayTestResults(implementation.testResults);
+    console.log(`\n💾 Final Context: task-${taskId}-v${finalContext.version}.json`);
+    
+    if (mode === 'interactive') {
+      const finalApproval = await this.promptForApproval('implementation');
+      
+      // Save final human feedback
+      await this.contextManager.updateContext(taskId, {
+        phase: 'validation',
+        agent: 'human',
+        type: 'human_feedback',
+        content: finalApproval
+      });
+      
+      if (!finalApproval.approved) {
+        await this.handleRejection(taskId, 'implementation', finalApproval.feedback);
+        return;
+      }
+    } else {
+      console.log('⏸️  Waiting for final validation. Resume with: cht-agent resume --task-id ' + taskId);
+      await this.saveCheckpoint(taskId, 'implementation', implementation);
+      return;
+    }
+    
+    // 8. Completion and Learning
+    await this.completeTask(taskId, implementation);
+    await this.contextManager.finalizeContext(taskId, 'success');
+    
+    // Save successful patterns for future learning
+    if (implementation.testResults.coverage > 90) {
+      await this.contextManager.saveSuccessfulPattern(taskId);
+      console.log(`\n🎓 Pattern saved for future learning`);
+    }
+    
+    console.log(`\n✨ Task ${taskId} completed successfully!`);
+    console.log(`📊 Final context: ${finalContext.updates.length} updates across ${finalContext.version} versions`);
+  }
+  
+  private displaySimilarContexts(contexts: SimilarContext[]): void {
+    console.log('\n┌─────────────────────────────────────────────────┐');
+    console.log('│ Similar Past Implementations                    │');
+    console.log('├─────────────────────────────────────────────────┤');
+    contexts.slice(0, 3).forEach(ctx => {
+      console.log(`│ ${ctx.taskId}: ${ctx.summary}`);
+      console.log(`│   Success Rate: ${ctx.successRate}%`);
+      console.log(`│   Reusable Components: ${ctx.reusableCount}`);
+      console.log('├─────────────────────────────────────────────────┤');
+    });
+    console.log('└─────────────────────────────────────────────────┘');
+  }
+}
+
+```
+
+## Human-in-the-Loop Integration
+### Validation Checkpoint #1: Post-Research
+
+Purpose: Ensure research accuracy and validate the orchestration plan before code generation
+
+Validation Interface:
+
+```typescript
+typescriptinterface ResearchValidation {
+  checkpoints: {
+    documentationFound: boolean;
+    contextRelevant: boolean;
+    requirementsUnderstood: boolean;
+    planAppropriate: boolean;
+  };
+  
+  displayFormat: {
+    summary: string;
+    keyFindings: string[];
+    proposedApproach: string;
+    estimatedComplexity: 'low' | 'medium' | 'high';
+    suggestedComponents: string[];
+    riskFactors: string[];
+  };
+  
+  humanActions: {
+    approve: () => void;
+    requestClarification: (areas: string[]) => void;
+    modifyPlan: (changes: PlanModification) => void;
+    reject: (reason: string) => void;
+  };
+}
+```
+
+**Context Viewer CLI Command**:
+```bash
+# View current context state
+cht-agent context --task-id abc123 [--section research|plan|updates]
+
+# Show context evolution timeline
+cht-agent timeline --task-id abc123
+
+# Export context for analysis
+cht-agent export-context --task-id abc123 --format json|yaml|markdown
+```
+
+**Context Display Example**:
+```bash
+$ cht-agent context --task-id abc123 --section plan
+
+════════════════════════════════════════════════════
+ORCHESTRATION PLAN - Version 3 (Updated 2 mins ago)
+════════════════════════════════════════════════════
+
+Current Phase: Development (IN PROGRESS)
+Overall Progress: ████████░░░░░░░░ 45%
+
+✅ PHASE 1: Research (COMPLETED - 12 mins)
+   • Documentation analysis: Complete
+   • Similar patterns identified: 3 found
+   • Context built: v1 saved
+
+⚡ PHASE 2: Development (IN PROGRESS - 5 mins)
+   • Form generation: Complete ✓
+   • Validation rules: In Progress... 
+   • Offline handlers: Pending
+   Latest: Generated pregnancy_visit.js (2 mins ago)
+
+⏳ PHASE 3: Testing (PENDING)
+   • Unit tests: Not started
+   • Integration tests: Not started
+   • Coverage analysis: Not started
+
+📈 Plan Modifications:
+   v2: Added offline handler requirement (Human feedback)
+   v3: Extended test cases for edge scenarios (Agent finding)
+
+💾 Full context: ./agent-context/active/task-abc123-v3.json
+```
+
+### Validation Checkpoint #2: Post-Implementation
+
+**Purpose**: Verify code quality, test coverage, and adherence to requirements before finalizing
+
+**Validation Interface**:
+```typescript
+interface ImplementationValidation {
+  codeReview: {
+    filesGenerated: FileInfo[];
+    lintingResults: LintResult[];
+    testCoverage: CoverageReport;
+    standardsCompliance: ComplianceCheck[];
+  };
+  
+  testResults: {
+    unitTests: TestSuite;
+    integrationTests: TestSuite;
+    manualTestsRequired: string[];
+  };
+  
+  checklist: {
+    requirementsMet: RequirementCheck[];
+    acceptanceCriteriaPassed: boolean;
+    documentationUpdated: boolean;
+    backwardCompatible: boolean;
+  };
+  
+  humanActions: {
+    approve: () => void;
+    requestChanges: (changes: CodeChange[]) => void;
+    runAdditionalTests: (tests: string[]) => void;
+    reject: (reason: string) => void;
+  };
+}
+```
+
+**CLI Display**:
+```bash
+════════════════════════════════════════════════════
+IMPLEMENTATION COMPLETE - FINAL VALIDATION REQUIRED
+════════════════════════════════════════════════════
+
+📁 Files Generated:
+✓ webapp/src/js/modules/forms/pregnancy_visit.js
+✓ webapp/tests/unit/modules/forms/pregnancy_visit.spec.js
+✓ config/standard/forms/pregnancy_visit.xml
+
+🧪 Test Results:
+Unit Tests:      42/42 passed ✓
+Integration:     8/8 passed ✓
+Coverage:        94.3% (target: 90%) ✓
+
+✅ Requirements Checklist:
+[✓] Offline functionality implemented
+[✓] Gestational age validation working
+[✓] Integration with task scheduler
+[✓] Backward compatible with CHT 4.x
+
+⚡ Performance Impact:
+Form load time: +0.3s (acceptable)
+Sync payload: +2.1KB per submission
+
+📝 Documentation:
+[✓] Form configuration guide updated
+[✓] Field descriptions added
+[!] User guide update pending (manual)
+
+[A]pprove  [T]est Manually  [C]hanges Needed  [R]eject >
+```
+
 
 ## Implementation Phases
 
